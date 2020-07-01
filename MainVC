@@ -1,0 +1,395 @@
+pod 'PayPal-iOS-SDK'
+
+#import "PayPalMobile.h"
+
+
+import UIKit
+import DLRadioButton
+import DropDown
+
+class InfoPersonaliVC: UIViewController,PayPalPaymentDelegate {
+    
+    
+    //MARK:- IBOutlet
+    
+    @IBOutlet weak var txtSelectedPrice: UITextField!
+    @IBOutlet weak var viewTarget: UIView!
+    @IBOutlet weak var lblTotlePrice: UITextField!
+    
+    @IBOutlet weak var lblEmail: UILabel!
+    
+    @IBOutlet weak var lblFirstName: UILabel!
+    
+    @IBOutlet weak var lblLastName: UILabel!
+    
+    @IBOutlet weak var btnM: DLRadioButton!
+    
+    @IBOutlet weak var btnF: DLRadioButton!
+    
+    @IBOutlet weak var lblTokenTotali: UILabel!
+    
+    @IBOutlet weak var lblTokenUsati: UILabel!
+    
+    let dropDown = DropDown()
+    
+    var arrayPrice: [String] = []
+    var arrayDiscountedprice : [String] = []
+    
+    var dicResponse = NSDictionary()
+    
+    var environment:String = PayPalEnvironmentNoNetwork {
+        willSet(newEnvironment) {
+            if (newEnvironment != environment) {
+                PayPalMobile.preconnect(withEnvironment: newEnvironment)
+            }
+        }
+    }
+    
+    var payPalConfig = PayPalConfiguration()
+    
+    var payTotal = String()
+    var qtyTotal = Int()
+    
+    //MARK:- View Cycel
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        
+        callGetUserDataAPI()
+        
+        setup()
+        
+        callBuyingTokenAPI()
+        
+        payPalConfig.acceptCreditCards = false
+        
+        self.environment = "sandbox"
+        payPalConfig.merchantName = "Bookist"//Give your company name here.
+        payPalConfig.merchantPrivacyPolicyURL = URL(string: "https://www.paypal.com/webapps/mpp/ua/privacy-full")
+        payPalConfig.merchantUserAgreementURL = URL(string: "https://www.paypal.com/webapps/mpp/ua/useragreement-full")
+        //This is the language in which your paypal sdk will be shown to users.
+        payPalConfig.languageOrLocale = Locale.preferredLanguages[0]
+        //Here you can set the shipping address. You can choose either the address associated with PayPal account or different address. We’ll use .both here.
+        payPalConfig.payPalShippingAddressOption = .both;
+        // Do any additional setup after loading the view.
+    }
+    
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        PayPalMobile.preconnect(withEnvironment: environment)
+    }
+    
+    
+    override var preferredStatusBarStyle: UIStatusBarStyle {
+        return .lightContent
+    }
+    
+    // MARK: - User function
+    func setup() {
+        
+        if #available(iOS 13.0, *) {
+            let app = UIApplication.shared
+            let statusBarHeight: CGFloat = app.statusBarFrame.size.height
+            
+            let statusbarView = UIView()
+            statusbarView.backgroundColor = UIColor(red: 0/255, green: 65/255, blue: 147/255, alpha: 1)
+            view.addSubview(statusbarView)
+            
+            statusbarView.translatesAutoresizingMaskIntoConstraints = false
+            statusbarView.heightAnchor
+                .constraint(equalToConstant: statusBarHeight).isActive = true
+            statusbarView.widthAnchor
+                .constraint(equalTo: view.widthAnchor, multiplier: 1.0).isActive = true
+            statusbarView.topAnchor
+                .constraint(equalTo: view.topAnchor).isActive = true
+            statusbarView.centerXAnchor
+                .constraint(equalTo: view.centerXAnchor).isActive = true
+            
+        } else {
+            let statusBar = UIApplication.shared.value(forKeyPath: "statusBarWindow.statusBar") as? UIView
+            statusBar?.backgroundColor = UIColor(red: 0/255, green: 65/255, blue: 147/255, alpha: 1)
+        }
+    }
+    
+    func setDropDownCountryCode() {
+        
+        dropDown.dataSource = arrayPrice
+        dropDown.anchorView = viewTarget
+        dropDown.direction = .any
+        
+        dropDown.selectionAction = { [unowned self] (index: Int, item: String) in
+            print("Selected item: \(item) at index: \(index)")
+            
+            self.txtSelectedPrice.text = item
+            
+            let dic = self.dicResponse.value(forKey: item) as! NSDictionary
+            
+            let discounted_price = dic.value(forKey: "discounted_price") as! Double
+            
+            self.qtyTotal = Int(self.txtSelectedPrice.text!)!
+            
+            
+            let finalPrice = (discounted_price) * Double(self.qtyTotal)
+            
+            let sumFinal = finalPrice.roundToDecimal(2)
+            
+            self.lblTotlePrice.text = "\(sumFinal)"
+            self.payTotal = "\(sumFinal)"
+            
+            print(self.payTotal)
+            print(self.qtyTotal)
+            
+        }
+        
+        dropDown.bottomOffset = CGPoint(x: 0, y: viewTarget.bounds.height)
+        dropDown.topOffset = CGPoint(x: 0, y: -viewTarget.bounds.height)
+        dropDown.dismissMode = .onTap
+        dropDown.textColor = UIColor.darkGray
+        dropDown.backgroundColor = UIColor.white
+        dropDown.selectionBackgroundColor = UIColor.clear
+        
+        dropDown.reloadAllComponents()
+    }
+    
+    //MARK:-  PayPalPaymentDelegate
+    func payPalPaymentDidCancel(_ paymentViewController: PayPalPaymentViewController) {
+        print("PayPal Payment Cancelled")
+        self.txtSelectedPrice.text = ""
+        self.lblTotlePrice.text = "0.00"
+        paymentViewController.dismiss(animated: true, completion: nil)
+    }
+    func payPalPaymentViewController(_ paymentViewController: PayPalPaymentViewController, didComplete completedPayment: PayPalPayment) {
+        self.txtSelectedPrice.text = ""
+        self.lblTotlePrice.text = "0.00"
+        print("PayPal Payment Success !")
+        paymentViewController.dismiss(animated: true, completion: { () -> Void in
+            // send completed confirmaion to your server
+            print("Here is your proof of payment:nn(completedPayment.confirmation)nnSend this to your server for confirmation and fulfillment.")
+        })
+    }
+    
+    
+    // MARK: - Action Method
+    @IBAction func clickBack(_ sender: Any) {
+        
+        if let controller = self.storyboard?.instantiateViewController(withIdentifier: "HomeViewController") as? HomeViewController {
+            
+            let viewcontrollers = self.navigationController?.viewControllers
+            var isExist = false
+            for viewcontroller in viewcontrollers! {
+                if viewcontroller.isKind(of: HomeViewController.self) {
+                    isExist = true
+                    break
+                }
+            }
+            if isExist == true {
+                self.navigationController?.popViewController(animated: true)
+            } else {
+                self.navigationController?.viewControllers.insert(controller, at: (viewcontrollers?.count)!)
+                self.navigationController?.popToViewController(controller, animated: true)
+            }
+        }
+        
+    }
+    
+    @IBAction func clickedChoosePrice(_ sender: Any) {
+        self.dropDown.show()
+    }
+    
+    
+    @IBAction func clickedPayPayment(_ sender: Any) {
+        
+        if self.lblTotlePrice.text == "0.00" {
+            AppUtilites.showAlert(title: "Bookist", message: "Please select token", cancelButtonTitle: "OK")
+        } else {
+            callCheckOutAPI()
+        }
+        
+    }
+    
+    func CallPayment() {
+        
+        print(NSDecimalNumber(string: payTotal))
+        
+        //These are the items choosen by user, for example
+        let item1 = PayPalItem(name: "Text", withQuantity: UInt(self.qtyTotal), withPrice: NSDecimalNumber(string: payTotal), withCurrency: "EUR", withSku: "Text")
+        let items = [item1]
+        let subtotal = PayPalItem.totalPrice(forItems: items) //This is the total price of all the items
+        // Optional: include payment details
+        let paymentDetails = PayPalPaymentDetails(subtotal: subtotal, withShipping: 0, withTax: 0)
+        let total = subtotal //This is the total price including shipping and tax
+        let payment = PayPalPayment(amount: total, currencyCode: "EUR", shortDescription: "BREWIT 9", intent: .sale)
+        payment.items = items
+        payment.paymentDetails = paymentDetails
+        if (payment.processable) {
+            let paymentViewController = PayPalPaymentViewController(payment: payment, configuration: payPalConfig, delegate: self)
+            paymentViewController?.modalPresentationStyle = .fullScreen
+            present(paymentViewController!, animated: true, completion: nil)
+        }
+        else {
+            // This particular payment will always be processable. If, for
+            // example, the amount was negative or the shortDescription was
+            // empty, this payment wouldn’t be processable, and you’d want
+            // to handle that here.
+            print("Payment not processalbe: (payment)")
+        }
+    }
+    
+    //MARK:- API Call
+    func callGetUserDataAPI() {
+        
+        APIClient.sharedInstance.showIndicator()
+        
+        let param = ["":""]
+        APIClient.sharedInstance.MakeAPICallWihAuthHeaderGet(PERSONAL_INFO, parameters: param, completionHandler: { (response, error, statusCode) in
+            
+            if error == nil {
+                print("STATUS CODE \(String(describing: statusCode))")
+                print("Response \(String(describing: response))")
+                
+                APIClient.sharedInstance.hideIndicator()
+                
+                if statusCode == 200 {
+                    
+                    let dicResponce = response?["response_user"] as? NSDictionary
+                    
+                    
+                    
+                    self.lblEmail.text = dicResponce?.value(forKey: "mail") as? String
+                    self.lblFirstName.text = dicResponce?.value(forKey: "nome") as? String
+                    self.lblLastName.text = dicResponce?.value(forKey: "cognome") as? String
+                    self.lblTokenTotali.text = "\(dicResponce?.value(forKey: "token") as? Int ?? 0)"
+                    self.lblTokenUsati.text = "\(dicResponce?.value(forKey: "used_token") as? Int ?? 0)"
+                    
+                    let genere = dicResponce?.value(forKey: "genere") as? String
+                    
+                    if genere == "M" {
+                        self.btnM.isSelected = true
+                        self.btnF.isSelected = false
+                        self.btnM.iconColor = UIColor(red: 20/255, green: 107/255, blue: 203, alpha: 1)
+                        self.btnF.iconColor = UIColor.black
+                        
+                    } else {
+                        self.btnF.isSelected = true
+                        self.btnM.isSelected = false
+                        self.btnM.iconColor = UIColor.black
+                        self.btnF.iconColor = UIColor(red: 20/255, green: 107/255, blue: 203, alpha: 1)
+                    }
+                    
+                } else {
+                    
+                    let detail = response?["detail"] as? String
+                    
+                    if detail == "Invalid token." {
+                        
+                        UserDefaults.standard.set("", forKey: "auth_Token")
+                        UserDefaults.standard.set("", forKey: "mail")
+                        UserDefaults.standard.set("", forKey: "nome")
+                        UserDefaults.standard.set("", forKey: "cognome")
+                        UserDefaults.standard.set(false, forKey: "isUserLoggedIn")
+                        UserDefaults.standard.synchronize()                        
+                    }
+                    
+                    
+                }
+                
+            } else {
+                
+                APIClient.sharedInstance.hideIndicator()
+                print("Response \(String(describing: response))")
+                let message = response?["message"] as? String ?? ""
+                AppUtilites.showAlert(title: message, message: "", cancelButtonTitle: "OK")
+            }
+        })
+        
+    }
+    
+    func callBuyingTokenAPI() {
+        
+        APIClient.sharedInstance.showIndicator()
+        
+        let param = ["":""]
+        APIClient.sharedInstance.MakeAPICallWihAuthHeaderGet(GET_BUYTING_TOKENS, parameters: param, completionHandler: { (response, error, statusCode) in
+            
+            if error == nil {
+                
+                APIClient.sharedInstance.hideIndicator()
+                print("STATUS CODE \(String(describing: statusCode))")
+                print("Response \(String(describing: response))")
+                
+                if statusCode == 200 {
+                    
+                    self.dicResponse = (response!["response_buying_tokens"] as? NSDictionary)!
+                    
+                    self.arrayPrice = self.dicResponse.allKeys as! [String]
+                    
+                    self.setDropDownCountryCode()
+                    
+                    print(self.arrayPrice)
+                    
+                } else {
+                    
+                }
+                
+            } else {
+                APIClient.sharedInstance.hideIndicator()
+                print("Response \(String(describing: response))")
+                let message = response?["message"] as? String ?? ""
+                AppUtilites.showAlert(title: message, message: "", cancelButtonTitle: "OK")
+            }
+        })
+    }
+    
+    func callCheckOutAPI() {
+        
+        APIClient.sharedInstance.showIndicator()
+        
+        let param = ["price": payTotal,"quantity": qtyTotal] as [String : Any]
+        
+        print(param)
+        APIClient.sharedInstance.MakeAPICallWihAuthHeaderPost(CHECKOUT, parameters: param, completionHandler: { (response, error, statusCode) in
+            
+            if error == nil {
+                APIClient.sharedInstance.hideIndicator()
+                print("STATUS CODE \(String(describing: statusCode))")
+                print("Response \(String(describing: response))")
+                
+                if statusCode == 200 {
+                    
+                    if let form = response?["form"] as? String {
+                        self.CallPayment()
+                    }
+                    
+                    if let form = response?["form_rendered"] as? String {
+                        self.CallPayment()
+                    }
+                    
+                } else {
+                    
+                }
+                
+            } else {
+                APIClient.sharedInstance.hideIndicator()
+                print("Response \(String(describing: response))")
+                let message = response?["message"] as? String ?? ""
+                AppUtilites.showAlert(title: message, message: "", cancelButtonTitle: "OK")
+            }
+        })
+        
+    }
+    
+}
+
+extension Dictionary {
+    mutating func merge(dict: [Key: Value]){
+        for (k, v) in dict {
+            updateValue(v, forKey: k)
+        }
+    }
+}
+
+extension Double {
+    func roundToDecimal(_ fractionDigits: Int) -> Double {
+        let multiplier = pow(10, Double(fractionDigits))
+        return Darwin.round(self * multiplier) / multiplier
+    }
+}
